@@ -1,4 +1,5 @@
 import os
+import json
 import openai
 import flask
 from dotenv import load_dotenv
@@ -22,53 +23,59 @@ app.config["DEBUG"] = is_on_heroku is None
 CORS(app)
 
 @app.route("/sapi/search", methods=["POST", "GET"])
-#{prompt: r, license_key: s}
 def search():
     '''Do search'''
     data = flask.request.json if flask.request.method == "POST" else flask.request.args
     try:
-        final_prompt = get_serp(data["prompt"], num_results=3, time_period='all', region='us-en')
-        response = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=final_prompt,
-            temperature=0.4,
-            max_tokens=600,
-            stop=["\n\n"]
-        )
-        return flask.jsonify(response)
+        def stream():
+            final_prompt = get_serp(data["prompt"], num_results=3, time_period='all', region='us-en')
+            response = openai.Completion.create(
+                engine="text-davinci-003",
+                prompt=final_prompt,
+                temperature=0.4,
+                max_tokens=600,
+                stop=["\n\n"],
+                stream=True,
+            )
+            for resp in response:
+                yield 'data: %s\n\n' % json.dumps(resp)
+        # return json as event stream
+        return flask.Response(stream(), mimetype="text/event-stream")
     except OpenAIError as err:
         return flask.jsonify({"error": err})
 
-@app.route("/sapi/call", methods=["POST"])
-#{prompt: r, license_key: s}
+@app.route("/napi/call", methods=["POST", "GET"])
 def call():
     '''Do call'''
-    data = flask.request.json
+    data = flask.request.json if flask.request.method == "POST" else flask.request.args
     prompt = data["prompt"]
     response = openai.Completion.create(
         engine="text-davinci-003",
         prompt=prompt,
         temperature=0.4,
-        max_tokens=600,
+        max_tokens=60,
     )
-
     return flask.jsonify(response)
 
-@app.route("/api/call", methods=["GET"])
-#{prompt: r, license_key: s}
-def callget():
+@app.route("/sapi/call", methods=["POST", "GET"])
+def stream():
+    # Mock response
+    #return flask.Response(format_sse(str(flask.jsonify(mock))), mimetype="text/event-stream")
     '''Do call'''
-    query = flask.request.args
-    prompt = query["prompt"]
-    response = openai.Completion.create(
-        engine="text-davinci-003",
-        prompt=prompt,
-        temperature=0.4,
-        max_tokens=600,
-    )
+    data = flask.request.json if flask.request.method == "POST" else flask.request.args
+    prompt = data["prompt"]
+    def stream():
+        response = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=prompt,
+            temperature=0.4,
+            max_tokens=60,
+            stream=True,
+        )
+        for resp in response:
+            yield 'data: %s\n\n' % json.dumps(resp)
 
-    return flask.jsonify(response)
-# Listen on PORT
+    return flask.Response(stream(), mimetype="text/event-stream")
 
 if is_on_heroku:
     serve(app, port=PORT)
