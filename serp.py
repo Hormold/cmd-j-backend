@@ -2,6 +2,7 @@
 import re
 import datetime
 import requests
+from readability import Document
 from duckduckgo_search import ddg
 
 DEFAULT_SETTINGS = {
@@ -19,22 +20,29 @@ def format_web_results(results: list) -> str:
 def get_serp(query: str, num_results: int, time_period: str, region: str) -> list:
     """Returns a list of search results"""
 
+    query_to_insert = str(query)
+    if query_to_insert.find("page:") != -1:
+	    # Extract the URL from the query, it can be anywhere in the query
+        query_url = query_to_insert[query_to_insert.find("page:") + 5:]
+        query_to_insert = query_to_insert.replace(f"page:{query_url}", "")
     serp_prompt = '''Web search results:
 
 {web_results}
 Current date: {current_date}
 
 Instructions: Using the provided web search results, write a comprehensive reply to the given query. Make sure to cite results using [number](URL) notation after the reference. If the provided search results refer to multiple subjects with the same name, write separate answers for each subject.
-Query: {query}
+Query: {query_to_insert}
 Result answer: '''
-
+   
+    print(f"Query: {serp_prompt}")
+    
     web_results = api_search(query, num_results, time_period, region)
     current_date = datetime.datetime.now().strftime("%Y-%m-%d")
 
     final = serp_prompt.format(
         web_results=format_web_results(web_results),
         current_date=current_date,
-        query=query
+        query_to_insert=query_to_insert
     )
 
     return final
@@ -46,18 +54,26 @@ def normalize_text(text: str) -> str:
     text = re.sub(r"\s{3,}", " ", text)
     return text
 
+def page_to_text(url):
+    """Converts a webpage to text"""
+    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+    document = Document(response.text)
+    # return title and summary
+    return {
+        "title": normalize_text(document.title()),
+        "body": normalize_text(document.summary())
+    }
+
 def api_search(query: str, num_results: int, time_period: str, region: str) -> list:
     """Does a search using the DuckDuckGo API"""
     page_operator_matches = re.search(r"page:(\S+)", query)
     query_url = None
 
     if page_operator_matches:
-	    # Not tested
-        return;
         query_url = page_operator_matches.group(1)
         # Check is it is a valid URL
         if not re.match(r"^https?://", query_url):
-            query_url = "http://" + query_url
+            query_url = "https://" + query_url
 
         
     if query_url:
