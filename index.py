@@ -69,7 +69,7 @@ def stream():
             engine="text-davinci-003",
             prompt=prompt,
             temperature=0.4,
-            max_tokens=60,
+            max_tokens=600,
             stream=True,
         )
         for resp in response:
